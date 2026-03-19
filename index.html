@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Оплата проживания — QR (реквизиты кириллицей)</title>
+  <title>Оплата проживания — QR по ГОСТ (Nayuki)</title>
 
-  <!-- qrcode.js (CDN, бесплатно) [web:53] -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- Nayuki QR Code generator ES6 (MIT, бесплатно) [web:106] -->
+  <script src="https://github.com/nayuki/QR-Code-generator/releases/download/v1.8.0/qrcodegen-v1.8.0-es6.js"></script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -74,14 +74,12 @@
       text-align: center;
       margin-top: 28px;
     }
-    #qrcode {
+    #qr-canvas {
       display: none;
       border: 1px solid #e5e7eb;
       border-radius: 8px;
       padding: 12px;
       background: #fff;
-      width: 280px;
-      height: 280px;
       margin: 0 auto;
     }
     #purpose-preview {
@@ -115,7 +113,7 @@
 </head>
 <body>
 <div class="card">
-  <h2>Оплата проживания (реквизиты кириллицей)</h2>
+  <h2>Оплата проживания (реквизиты кириллицей, Purpose латиницей)</h2>
 
   <label>Дата заезда</label>
   <input type="date" id="dateIn">
@@ -143,14 +141,14 @@
   <button type="button" onclick="generateQR()">Сформировать QR-код</button>
 
   <div id="qr-wrapper">
-    <div id="qrcode"></div>
+    <canvas id="qr-canvas"></canvas>
     <div id="purpose-preview"></div>
     <div id="error" class="error-msg"></div>
   </div>
 </div>
 
 <script>
-  // Реквизиты ИП — КИРИЛЛИЦА (как вы просили)
+  // Реквизиты ИП — КИРИЛЛИЦА
   const IP = {
     Name:        'ИП Мусатова Людмила Ивановна',
     PersonalAcc: '40802810500000020879',
@@ -181,7 +179,7 @@
     const dateOut = document.getElementById('dateOut').value;
     const email   = document.getElementById('email').value.trim();
     const roomSel = document.getElementById('room');
-    const room    = roomSel.value; // латинские коды G93/P46 и т.п.
+    const room    = roomSel.value; // латинские коды G93/P46
     const sumStr  = document.getElementById('sum').value;
 
     clearError();
@@ -194,16 +192,15 @@
 
     const sumKop = Math.round(sumRub * 100);
 
-    // НАЗНАЧЕНИЕ ЛАТИНИЦЕЙ (как вы попросили):
-    // Пример: "Oplata prozh. G93 20.03-22.03, email user@mail.ru"
-    let purposeLatin =
+    // PURPOSE ЛАТИНИЦЕЙ
+    let purpose =
       'Oplata prozh. ' + room +
       ' ' + formatDate(dateIn) + '-' + formatDate(dateOut) +
       ', email ' + email;
 
-    // Сильно режем, чтобы не было overflow в qrcode.js [web:82][web:86]
-    if (purposeLatin.length > 80) {
-      purposeLatin = purposeLatin.substring(0, 80);
+    // Жёстко режем до 80 символов, чтобы точно не упираться в ограничения [web:82]
+    if (purpose.length > 80) {
+      purpose = purpose.substring(0, 80);
     }
 
     const qrString = [
@@ -214,35 +211,55 @@
       'BIC=' + IP.BIC,
       'CorrespAcc=' + IP.CorrespAcc,
       'PayeeINN=' + IP.PayeeINN,
-      'Purpose=' + purposeLatin,
+      'Purpose=' + purpose,
       'Sum=' + sumKop
     ].join('|');
 
-    const qrDiv = document.getElementById('qrcode');
-    qrDiv.innerHTML = '';
+    if (typeof qrcodegen === 'undefined' || !qrcodegen.QrCode) {
+      showError('Библиотека qrcodegen не загрузилась (проверьте доступ к github.com).');
+      return;
+    }
 
+    const QRC = qrcodegen.QrCode;
+
+    let qr;
     try {
-      // Минимальный уровень коррекции L — максимальная вместимость [web:82]
-      new QRCode(qrDiv, {
-        text: qrString,
-        width: 280,
-        height: 280,
-        colorDark: '#000000',
-        colorLight: '#ffffff',
-        correctLevel: QRCode.CorrectLevel.L
-      });
-
-      qrDiv.style.display = 'inline-block';
-
-      const prev = document.getElementById('purpose-preview');
-      prev.style.display = 'block';
-      prev.innerHTML =
-        '<b>Назначение (латиница):</b> ' + purposeLatin +
-        '<code>' + qrString + '</code>';
-
+      // encodeText сам подбирает версию и кодирует строку (UTF-8/Unicode) [web:106]
+      qr = QRC.encodeText(qrString, QRC.Ecc.L);
     } catch (e) {
       showError('Ошибка генерации QR: ' + (e && e.message ? e.message : String(e)));
+      return;
     }
+
+    const size = qr.size;
+    const scale = 6;
+    const border = 4;
+
+    const canvas = document.getElementById('qr-canvas');
+    const ctx = canvas.getContext('2d');
+
+    canvas.width  = (size + border * 2) * scale;
+    canvas.height = (size + border * 2) * scale;
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = '#000000';
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        if (qr.getModule(x, y)) {
+          ctx.fillRect((x + border) * scale, (y + border) * scale, scale, scale);
+        }
+      }
+    }
+
+    canvas.style.display = 'block';
+
+    const prev = document.getElementById('purpose-preview');
+    prev.style.display = 'block';
+    prev.innerHTML =
+      '<b>Назначение (латиница):</b> ' + purpose +
+      '<code>' + qrString + '</code>';
   }
 </script>
 </body>
