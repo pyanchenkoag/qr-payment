@@ -193,7 +193,7 @@
     let shortEmail = email.split('@')[0];
     if (shortEmail.length > 10) shortEmail = shortEmail.substring(0, 10);
 
-    let purpose = 'Rm:' + room + ' ' + d1 + '-' + d2 + ' ' + shortEmail;
+    let purpose = room + ' ' + d1 + '-' + d2 + ' ' + shortEmail;
     if (purpose.length > 40) {
       purpose = purpose.substring(0, 40);
     }
