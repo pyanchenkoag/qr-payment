@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Оплата проживания — QR (Nayuki)</title>
 
-  <!-- Только Nayuki QR Code generator [web:106] -->
+  <!-- Только Nayuki QR Code generator (без qrcode.js) [web:106] -->
   <script src="https://github.com/nayuki/QR-Code-generator/releases/download/v1.8.0/qrcodegen-v1.8.0-es6.js"></script>
 
   <style>
@@ -113,7 +113,7 @@
 </head>
 <body>
 <div class="card">
-  <h2>Оплата проживания (реквизиты кириллицей, Purpose латиницей)</h2>
+  <h2>Оплата проживания</h2>
 
   <label>Дата заезда</label>
   <input type="date" id="dateIn">
@@ -150,7 +150,7 @@
 <script>
   // Реквизиты ИП — кириллица
   const IP = {
-    Name:        'ИП Мусатова Людмила Ивановна',
+    Name:        'ИП Мусатова Л.И.',
     PersonalAcc: '40802810500000020879',
     BankName:    'Банк Глобус (АО)',
     BIC:         '044525473',
@@ -189,11 +189,11 @@
     // Purpose латиницей, с полным email: "<room> 20.03-22.03, user@mail.ru"
     const d1 = formatDate(dateIn);
     const d2 = formatDate(dateOut);
-    let purpose = room + ' ' + d1 + '-' + d2 + ', ' + email;
+    let purpose = 'Проживание ' + room + ' ' + d1 + '-' + d2 + ', ' + email;
 
     // Лёгкое ограничение по длине, чтобы не раздувать строку
-    if (purpose.length > 80) {
-      purpose = purpose.substring(0, 80);
+    if (purpose.length > 100) {
+      purpose = purpose.substring(0, 100);
     }
 
     const qrString = [
