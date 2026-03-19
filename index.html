@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Оплата проживания — QR по ГОСТ Р 56042-2014</title>
+  <title>Оплата проживания — QR по ГОСТ</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -70,13 +70,20 @@
       text-align: center;
       margin-top: 28px;
     }
-    #qr-canvas {
+    #qr-img {
       display: none;
       border: 1px solid #e5e7eb;
       border-radius: 8px;
       padding: 12px;
       background: #fff;
       margin: 0 auto;
+      max-width: 280px;
+    }
+    .error-msg {
+      color: #dc2626;
+      font-size: 13px;
+      margin-top: 10px;
+      text-align: left;
     }
     #purpose-preview {
       display: none;
@@ -90,19 +97,6 @@
       border-radius: 6px;
       padding: 10px 12px;
       line-height: 1.6;
-    }
-    #purpose-preview code {
-      display: block;
-      margin-top: 6px;
-      font-size: 11px;
-      color: #6b7280;
-      white-space: pre-wrap;
-      word-break: break-all;
-    }
-    .error-msg {
-      color: #dc2626;
-      font-size: 13px;
-      margin-top: 10px;
     }
   </style>
 </head>
@@ -133,20 +127,18 @@
   <label>Сумма оплаты (руб.)</label>
   <input type="number" id="sum" placeholder="5000" min="1" step="1">
 
-  <!-- ВАЖНО: вызываем makeQr() прямо из HTML -->
   <button type="button" onclick="makeQr()">Сформировать QR-код</button>
 
   <div id="qr-wrapper">
-    <canvas id="qr-canvas"></canvas>
+    <img id="qr-img" alt="QR-код для оплаты">
     <div id="purpose-preview"></div>
+    <div id="error" class="error-msg"></div>
   </div>
 </div>
 
-<!-- Модуль с библиотекой ГОСТ + определение window.makeQr -->
-<script type="module">
-  import * as PaymentCode from 'https://cdn.jsdelivr.net/npm/@kiraind/gost-r-56042-2014/+esm'; // [web:159]
-
-  const DETAILS_BASE = {
+<script>
+  // Реквизиты ИП (ГОСТ-поля, как у createqr.ru) [web:48]
+  const DETAILS = {
     Name:        'ИП Мусатова Людмила Ивановна',
     PersonalAcc: '40802810500000020879',
     BankName:    'Банк Глобус (АО)',
@@ -160,27 +152,19 @@
   function formatDate(iso) {
     if (!iso) return '';
     const p = iso.split('-');
-    return p.length === 3 ? `${pad2(p[2])}.${pad2(p[1])}.${p[0]}` : iso;
+    return p.length === 3 ? pad2(p[2]) + '.' + pad2(p[1]) + '.' + p[0] : iso;
   }
 
   function showError(msg) {
-    const wrapper = document.getElementById('qr-wrapper');
-    let old = wrapper.querySelector('.error-msg');
-    if (old) old.remove();
-    const d = document.createElement('div');
-    d.className = 'error-msg';
-    d.textContent = msg;
-    wrapper.appendChild(d);
+    const el = document.getElementById('error');
+    el.textContent = msg || '';
   }
 
   function clearError() {
-    const wrapper = document.getElementById('qr-wrapper');
-    let old = wrapper.querySelector('.error-msg');
-    if (old) old.remove();
+    showError('');
   }
 
-  // Делаем функцию видимой из HTML (onclick="makeQr()")
-  window.makeQr = async () => {
+  function makeQr() {
     const dateIn  = document.getElementById('dateIn').value;
     const dateOut = document.getElementById('dateOut').value;
     const email   = document.getElementById('email').value.trim();
@@ -196,40 +180,42 @@
     const sumRub = parseFloat(sumStr);
     if (!sumRub || sumRub <= 0) { showError('Укажите сумму в рублях'); return; }
 
-    const sumKop = Math.round(sumRub * 100);
+    const sumInt = Math.round(sumRub);
 
-    // Полностью кириллическое назначение, как вы хотели
     let purpose =
       'Оплата проживания в ' + room +
       ' за период ' + formatDate(dateIn) + '-' + formatDate(dateOut) +
       ', email ' + email;
 
-    if (purpose.length > 200) {
-      purpose = purpose.substring(0, 200);
+    if (purpose.length > 210) {
+      purpose = purpose.substring(0, 210);
     }
 
-    const canvas  = document.getElementById('qr-canvas');
-    const preview = document.getElementById('purpose-preview');
+    // Сервис createqr.ru: формирование QR по ГОСТ по параметрам URL [web:48]
+    const base = 'https://createqr.ru/api/v1/qr-pay';
+    const params = new URLSearchParams({
+      Name:        DETAILS.Name,
+      PersonalAcc: DETAILS.PersonalAcc,
+      BankName:    DETAILS.BankName,
+      BIC:         DETAILS.BIC,
+      CorrespAcc:  DETAILS.CorrespAcc,
+      PayeeINN:    DETAILS.PayeeINN,
+      Purpose:     purpose,
+      SumRub:      String(sumInt),
+      size:        'm',
+      format:      'png'
+    });
 
-    try {
-      // Генерация ГОСТ-совместимого QR прямо на canvas [web:159]
-      await PaymentCode.toCanvas(canvas, {
-        ...DETAILS_BASE,
-        Purpose: purpose,
-        Sum: sumKop
-      }, {
-        scale: 8,
-        errorCorrectionLevel: 'L'
-      });
+    const url = base + '?' + params.toString();
 
-      canvas.style.display = 'inline-block';
-      preview.style.display = 'block';
-      preview.innerHTML = '<b>Назначение платежа:</b> ' + purpose;
+    const img = document.getElementById('qr-img');
+    img.src = url;
+    img.style.display = 'block';
 
-    } catch (e) {
-      showError('Ошибка генерации QR: ' + (e && e.message ? e.message : String(e)));
-    }
-  };
+    const prev = document.getElementById('purpose-preview');
+    prev.style.display = 'block';
+    prev.textContent = 'Назначение платежа: ' + purpose;
+  }
 </script>
 </body>
 </html>
