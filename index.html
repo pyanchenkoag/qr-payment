@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Оплата проживания — QR по ГОСТ Р 56042-2014</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f5f5;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 32px 16px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.09);
+      padding: 32px 28px;
+      width: 100%;
+      max-width: 520px;
+    }
+    h2 {
+      text-align: center;
+      font-size: 20px;
+      color: #1a1a1a;
+      margin-bottom: 24px;
+    }
+    label {
+      display: block;
+      margin-top: 14px;
+      font-weight: 600;
+      font-size: 13px;
+      color: #444;
+      margin-bottom: 4px;
+    }
+    input, select {
+      width: 100%;
+      padding: 9px 12px;
+      font-size: 15px;
+      border: 1.5px solid #d1d5db;
+      border-radius: 7px;
+      outline: none;
+      transition: border-color 0.15s;
+      background: #fafafa;
+    }
+    input:focus, select:focus {
+      border-color: #0077cc;
+      background: #fff;
+    }
+    button {
+      display: block;
+      width: 100%;
+      margin-top: 22px;
+      padding: 13px;
+      font-size: 16px;
+      font-weight: 600;
+      background: #0077cc;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button:hover { background: #005fa3; }
+    #qr-wrapper {
+      text-align: center;
+      margin-top: 28px;
+    }
+    #qr-canvas {
+      display: none;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px;
+      background: #fff;
+      margin: 0 auto;
+    }
+    #purpose-preview {
+      display: none;
+      margin-top: 14px;
+      font-size: 13px;
+      color: #555;
+      word-break: break-word;
+      text-align: left;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 12px;
+      line-height: 1.6;
+    }
+    #purpose-preview code {
+      display: block;
+      margin-top: 6px;
+      font-size: 11px;
+      color: #6b7280;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .error-msg {
+      color: #dc2626;
+      font-size: 13px;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h2>Оплата проживания (QR по ГОСТ)</h2>
+
+  <label>Дата заезда</label>
+  <input type="date" id="dateIn">
+
+  <label>Дата выезда</label>
+  <input type="date" id="dateOut">
+
+  <label>E-mail гостя</label>
+  <input type="email" id="email" placeholder="guest@example.com">
+
+  <label>Номер комнаты</label>
+  <select id="room">
+    <option value="" selected>— выберите номер —</option>
+    <option value="Г93">Г93</option>
+    <option value="Г94">Г94</option>
+    <option value="П46">П46</option>
+    <option value="П47">П47</option>
+    <option value="П1808">П1808</option>
+    <option value="П1809">П1809</option>
+  </select>
+
+  <label>Сумма оплаты (руб.)</label>
+  <input type="number" id="sum" placeholder="5000" min="1" step="1">
+
+  <button type="button" id="makeQrBtn">Сформировать QR-код</button>
+
+  <div id="qr-wrapper">
+    <canvas id="qr-canvas"></canvas>
+    <div id="purpose-preview"></div>
+  </div>
+</div>
+
+<script type="module">
+  import * as PaymentCode from 'https://cdn.jsdelivr.net/npm/@kiraind/gost-r-56042-2014/+esm';
+
+  // Ваши реквизиты для ГОСТ-строки [web:159]
+  const DETAILS_BASE = {
+    Name:        'ИП Мусатова Людмила Ивановна',
+    PersonalAcc: '40802810500000020879',
+    BankName:    'Банк Глобус (АО)',
+    BIC:         '044525473',
+    CorrespAcc:  '30101810345250000473',
+    PayeeINN:    '500910220717'
+  };
+
+  function pad2(n) { return String(n).padStart(2, '0'); }
+
+  function formatDate(iso) {
+    if (!iso) return '';
+    const p = iso.split('-');
+    return p.length === 3 ? `${pad2(p[2])}.${pad2(p[1])}.${p[0]}` : iso;
+  }
+
+  function showError(msg) {
+    const wrapper = document.getElementById('qr-wrapper');
+    let old = wrapper.querySelector('.error-msg');
+    if (old) old.remove();
+    const d = document.createElement('div');
+    d.className = 'error-msg';
+    d.textContent = msg;
+    wrapper.appendChild(d);
+  }
+
+  function clearError() {
+    const wrapper = document.getElementById('qr-wrapper');
+    let old = wrapper.querySelector('.error-msg');
+    if (old) old.remove();
+  }
+
+  document.getElementById('makeQrBtn').addEventListener('click', async () => {
+    const dateIn  = document.getElementById('dateIn').value;
+    const dateOut = document.getElementById('dateOut').value;
+    const email   = document.getElementById('email').value.trim();
+    const roomSel = document.getElementById('room');
+    const room    = roomSel.value;
+    const sumStr  = document.getElementById('sum').value;
+
+    clearError();
+
+    if (!dateIn || !dateOut) { showError('Укажите даты заезда и выезда'); return; }
+    if (!room)               { showError('Выберите номер комнаты'); return; }
+    if (!email)              { showError('Укажите e-mail гостя'); return; }
+    const sumRub = parseFloat(sumStr);
+    if (!sumRub || sumRub <= 0) { showError('Укажите сумму в рублях'); return; }
+
+    const sumKop = Math.round(sumRub * 100);
+
+    // Назначение платежа: кириллица, как вы хотите
+    let purpose =
+      'Оплата проживания в ' + room +
+      ' за период ' + formatDate(dateIn) + '-' + formatDate(dateOut) +
+      ', email ' + email;
+
+    // ГОСТ ограничивает Purpose 210 символами [web:31][web:159]
+    if (purpose.length > 200) {
+      purpose = purpose.substring(0, 200);
+    }
+
+    const canvas = document.getElementById('qr-canvas');
+    const preview = document.getElementById('purpose-preview');
+
+    try {
+      // Генерация ГОСТ-совместимого QR прямо на canvas [web:159]
+      await PaymentCode.toCanvas(canvas, {
+        ...DETAILS_BASE,
+        Purpose: purpose,
+        Sum: sumKop
+      }, {
+        scale: 8,
+        errorCorrectionLevel: 'L'
+      });
+
+      canvas.style.display = 'inline-block';
+
+      preview.style.display = 'block';
+      preview.innerHTML =
+        '<b>Назначение платежа:</b> ' + purpose;
+
+    } catch (e) {
+      showError('Ошибка генерации QR: ' + (e && e.message ? e.message : String(e)));
+    }
+  });
+</script>
+</body>
+</html>
