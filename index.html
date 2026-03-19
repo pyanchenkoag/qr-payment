@@ -3,7 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Оплата проживания — QR по ГОСТ</title>
+  <title>Оплата проживания — локальный QR</title>
+
+  <!-- БЕСПЛАТНАЯ локальная библиотека qrcode.js [web:53] -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -70,20 +74,15 @@
       text-align: center;
       margin-top: 28px;
     }
-    #qr-img {
+    #qrcode {
       display: none;
       border: 1px solid #e5e7eb;
       border-radius: 8px;
       padding: 12px;
       background: #fff;
+      width: 280px;
+      height: 280px;
       margin: 0 auto;
-      max-width: 280px;
-    }
-    .error-msg {
-      color: #dc2626;
-      font-size: 13px;
-      margin-top: 10px;
-      text-align: left;
     }
     #purpose-preview {
       display: none;
@@ -98,11 +97,25 @@
       padding: 10px 12px;
       line-height: 1.6;
     }
+    #purpose-preview code {
+      display: block;
+      margin-top: 6px;
+      font-size: 11px;
+      color: #6b7280;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .error-msg {
+      color: #dc2626;
+      font-size: 13px;
+      margin-top: 10px;
+      text-align: left;
+    }
   </style>
 </head>
 <body>
 <div class="card">
-  <h2>Оплата проживания (QR по ГОСТ)</h2>
+  <h2>Оплата проживания (локальный QR)</h2>
 
   <label>Дата заезда</label>
   <input type="date" id="dateIn">
@@ -127,18 +140,18 @@
   <label>Сумма оплаты (руб.)</label>
   <input type="number" id="sum" placeholder="5000" min="1" step="1">
 
-  <button type="button" onclick="makeQr()">Сформировать QR-код</button>
+  <button type="button" onclick="generateQR()">Сформировать QR-код</button>
 
   <div id="qr-wrapper">
-    <img id="qr-img" alt="QR-код для оплаты">
+    <div id="qrcode"></div>
     <div id="purpose-preview"></div>
     <div id="error" class="error-msg"></div>
   </div>
 </div>
 
 <script>
-  // Реквизиты ИП (ГОСТ-поля, как у createqr.ru) [web:48]
-  const DETAILS = {
+  // Реквизиты ИП (кириллица в Name/BankName)
+  const IP = {
     Name:        'ИП Мусатова Людмила Ивановна',
     PersonalAcc: '40802810500000020879',
     BankName:    'Банк Глобус (АО)',
@@ -152,19 +165,18 @@
   function formatDate(iso) {
     if (!iso) return '';
     const p = iso.split('-');
-    return p.length === 3 ? pad2(p[2]) + '.' + pad2(p[1]) + '.' + p[0] : iso;
+    return p.length === 3 ? `${pad2(p[2])}.${pad2(p[1])}.${p[0]}` : iso;
   }
 
   function showError(msg) {
-    const el = document.getElementById('error');
-    el.textContent = msg || '';
+    document.getElementById('error').textContent = msg || '';
   }
 
   function clearError() {
     showError('');
   }
 
-  function makeQr() {
+  function generateQR() {
     const dateIn  = document.getElementById('dateIn').value;
     const dateOut = document.getElementById('dateOut').value;
     const email   = document.getElementById('email').value.trim();
@@ -180,41 +192,55 @@
     const sumRub = parseFloat(sumStr);
     if (!sumRub || sumRub <= 0) { showError('Укажите сумму в рублях'); return; }
 
-    const sumInt = Math.round(sumRub);
+    const sumKop = Math.round(sumRub * 100);
 
+    // Максимально компактное, но кириллическое назначение
     let purpose =
-      'Оплата проживания в ' + room +
-      ' за период ' + formatDate(dateIn) + '-' + formatDate(dateOut) +
+      'Оплата проживания ' + room +
+      ' ' + formatDate(dateIn) + '-' + formatDate(dateOut) +
       ', email ' + email;
 
-    if (purpose.length > 210) {
-      purpose = purpose.substring(0, 210);
+    // ГОСТ: Purpose до 210 знаков, мы режем ещё жёстче, чтобы не было overflow [web:31][web:82]
+    if (purpose.length > 150) {
+      purpose = purpose.substring(0, 150);
     }
 
-    // Сервис createqr.ru: формирование QR по ГОСТ по параметрам URL [web:48]
-    const base = 'https://createqr.ru/api/v1/qr-pay';
-    const params = new URLSearchParams({
-      Name:        DETAILS.Name,
-      PersonalAcc: DETAILS.PersonalAcc,
-      BankName:    DETAILS.BankName,
-      BIC:         DETAILS.BIC,
-      CorrespAcc:  DETAILS.CorrespAcc,
-      PayeeINN:    DETAILS.PayeeINN,
-      Purpose:     purpose,
-      SumRub:      String(sumInt),
-      size:        'm',
-      format:      'png'
-    });
+    const qrString = [
+      'ST00012',
+      'Name=' + IP.Name,
+      'PersonalAcc=' + IP.PersonalAcc,
+      'BankName=' + IP.BankName,
+      'BIC=' + IP.BIC,
+      'CorrespAcc=' + IP.CorrespAcc,
+      'PayeeINN=' + IP.PayeeINN,
+      'Purpose=' + purpose,
+      'Sum=' + sumKop
+    ].join('|');
 
-    const url = base + '?' + params.toString();
+    const qrDiv = document.getElementById('qrcode');
+    qrDiv.innerHTML = '';
 
-    const img = document.getElementById('qr-img');
-    img.src = url;
-    img.style.display = 'block';
+    try {
+      new QRCode(qrDiv, {
+        text: qrString,
+        width: 280,
+        height: 280,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.L  // минимальный уровень, больше вместимость [web:82]
+      });
 
-    const prev = document.getElementById('purpose-preview');
-    prev.style.display = 'block';
-    prev.textContent = 'Назначение платежа: ' + purpose;
+      qrDiv.style.display = 'inline-block';
+
+      const prev = document.getElementById('purpose-preview');
+      prev.style.display = 'block';
+      prev.innerHTML =
+        '<b>Назначение платежа:</b> ' + purpose +
+        '<code>' + qrString + '</code>';
+
+    } catch (e) {
+      showError('Ошибка генерации QR: ' + (e && e.message ? e.message : String(e)));
+    }
   }
 </script>
 </body>
