@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Оплата проживания — QR (Nayuki)</title>
 
-  <!-- ВАЖНО: только Nayuki [web:106] -->
+  <!-- Только Nayuki QR Code generator (без qrcode.js) [web:106] -->
   <script src="https://github.com/nayuki/QR-Code-generator/releases/download/v1.8.0/qrcodegen-v1.8.0-es6.js"></script>
 
   <style>
@@ -148,7 +148,7 @@
 </div>
 
 <script>
-  // Реквизиты ИП — КИРИЛЛИЦА
+  // Реквизиты ИП — кириллица
   const IP = {
     Name:        'ИП Мусатова Людмила Ивановна',
     PersonalAcc: '40802810500000020879',
@@ -186,16 +186,14 @@
 
     const sumKop = Math.round(sumRub * 100);
 
-    // PURPOSE ЛАТИНИЦЕЙ, МАКСИМАЛЬНО КОРОТКО:
-    // Rm:G93 20.03-22.03 user
+    // Purpose латиницей, с полным email: "<room> 20.03-22.03, user@mail.ru"
     const d1 = formatDate(dateIn);
     const d2 = formatDate(dateOut);
-    let shortEmail = email.split('@')[0];
-    if (shortEmail.length > 10) shortEmail = shortEmail.substring(0, 10);
+    let purpose = room + ' ' + d1 + '-' + d2 + ', ' + email;
 
-    let purpose = room + ' ' + d1 + '-' + d2 + ' ' + shortEmail;
-    if (purpose.length > 40) {
-      purpose = purpose.substring(0, 40);
+    // Лёгкое ограничение по длине, чтобы не раздувать строку
+    if (purpose.length > 80) {
+      purpose = purpose.substring(0, 80);
     }
 
     const qrString = [
@@ -219,7 +217,7 @@
 
     let qr;
     try {
-      // encodeText сам выбирает версию и кодирует Unicode [web:106]
+      // Nayuki сам выбирает версию и кодирует Unicode [web:106]
       qr = QRC.encodeText(qrString, QRC.Ecc.LOW);
     } catch (e) {
       showError('Ошибка генерации QR: ' + (e && e.message ? e.message : String(e)));
