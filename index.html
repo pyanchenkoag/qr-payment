@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Оплата проживания — QR (Nayuki)</title>
 
-  <!-- Только Nayuki QR Code generator (без qrcode.js) [web:106] -->
   <script src="https://github.com/nayuki/QR-Code-generator/releases/download/v1.8.0/qrcodegen-v1.8.0-es6.js"></script>
 
   <style>
@@ -50,6 +49,10 @@
       outline: none;
       transition: border-color 0.15s;
       background: #fafafa;
+      color: #111;
+      appearance: auto;
+      -webkit-appearance: menulist;
+      -moz-appearance: menulist;
     }
     input:focus, select:focus {
       border-color: #0077cc;
@@ -70,6 +73,23 @@
       transition: background 0.15s;
     }
     button:hover { background: #005fa3; }
+
+    .secondary-btn {
+      margin-top: 10px;
+      background: #eef4f8;
+      color: #0f3d5e;
+      border: 1px solid #d7e5ef;
+    }
+    .secondary-btn:hover { background: #e3eef6; }
+
+    .share-btn {
+      margin-top: 10px;
+      background: #f4f0ff;
+      color: #4a2ea6;
+      border: 1px solid #ddd4ff;
+    }
+    .share-btn:hover { background: #ece4ff; }
+
     #qr-wrapper {
       text-align: center;
       margin-top: 28px;
@@ -109,6 +129,12 @@
       margin-top: 10px;
       text-align: left;
     }
+    .status-msg {
+      color: #0f766e;
+      font-size: 13px;
+      margin-top: 10px;
+      text-align: left;
+    }
   </style>
 </head>
 <body>
@@ -139,16 +165,18 @@
   <input type="number" id="sum" placeholder="5000" min="1" step="1">
 
   <button type="button" onclick="generateQR()">Сформировать QR-код</button>
+  <button type="button" class="secondary-btn" onclick="saveQRImage()">Сохранить QR как картинку</button>
+  <button type="button" class="share-btn" id="shareBtn" onclick="shareQRImage()">Поделиться QR</button>
 
   <div id="qr-wrapper">
     <canvas id="qr-canvas"></canvas>
     <div id="purpose-preview"></div>
+    <div id="status" class="status-msg"></div>
     <div id="error" class="error-msg"></div>
   </div>
 </div>
 
 <script>
-  // Реквизиты ИП — кириллица
   const IP = {
     Name:        'ИП Мусатова Л.И.',
     PersonalAcc: '40802810500000020879',
@@ -158,40 +186,51 @@
     PayeeINN:    '500910220717'
   };
 
+  let lastQrGenerated = false;
+
   function pad2(n) { return String(n).padStart(2, '0'); }
+
   function formatDate(iso) {
     if (!iso) return '';
     const p = iso.split('-');
     return p.length === 3 ? `${pad2(p[2])}.${pad2(p[1])}.${p[0]}` : iso;
   }
+
   function showError(msg) {
     document.getElementById('error').textContent = msg || '';
   }
+
+  function showStatus(msg) {
+    document.getElementById('status').textContent = msg || '';
+  }
+
   function clearError() { showError(''); }
+  function clearStatus() { showStatus(''); }
 
   function generateQR() {
     const dateIn  = document.getElementById('dateIn').value;
     const dateOut = document.getElementById('dateOut').value;
     const email   = document.getElementById('email').value.trim();
-    const room    = document.getElementById('room').value; // G93/P46…
+    const room    = document.getElementById('room').value;
     const sumStr  = document.getElementById('sum').value;
 
     clearError();
+    clearStatus();
+    lastQrGenerated = false;
 
     if (!dateIn || !dateOut) { showError('Укажите даты заезда и выезда'); return; }
-    if (!room)               { showError('Выберите номер комнаты'); return; }
-    if (!email)              { showError('Укажите e-mail гостя'); return; }
+    if (!room) { showError('Выберите номер комнаты'); return; }
+    if (!email) { showError('Укажите e-mail гостя'); return; }
+
     const sumRub = parseFloat(sumStr);
     if (!sumRub || sumRub <= 0) { showError('Укажите сумму в рублях'); return; }
 
     const sumKop = Math.round(sumRub * 100);
 
-    // Purpose латиницей, с полным email: "<room> 20.03-22.03, user@mail.ru"
     const d1 = formatDate(dateIn);
     const d2 = formatDate(dateOut);
-    let purpose = 'Проживание ' + room + ' ' + d1 + '-' + d2 + ', ' + email;
 
-    // Лёгкое ограничение по длине, чтобы не раздувать строку
+    let purpose = 'Оплата проживания ' + room + ' ' + d1 + '-' + d2 + ', ' + email;
     if (purpose.length > 100) {
       purpose = purpose.substring(0, 100);
     }
@@ -209,7 +248,7 @@
     ].join('|');
 
     if (typeof qrcodegen === 'undefined' || !qrcodegen.QrCode) {
-      showError('Библиотека qrcodegen не загрузилась (проверьте доступ к github.com).');
+      showError('Библиотека qrcodegen не загрузилась.');
       return;
     }
 
@@ -217,7 +256,6 @@
 
     let qr;
     try {
-      // Nayuki сам выбирает версию и кодирует Unicode [web:106]
       qr = QRC.encodeText(qrString, QRC.Ecc.LOW);
     } catch (e) {
       showError('Ошибка генерации QR: ' + (e && e.message ? e.message : String(e)));
@@ -247,13 +285,111 @@
     }
 
     canvas.style.display = 'block';
+    lastQrGenerated = true;
 
     const prev = document.getElementById('purpose-preview');
     prev.style.display = 'block';
     prev.innerHTML =
-      '<b>Назначение (латиница):</b> ' + purpose +
+      '<b>Назначение платежа:</b> ' + purpose +
       '<code>' + qrString + '</code>';
+
+    showStatus('QR-код сформирован.');
+    updateShareButtonState();
   }
+
+  function getCanvas() {
+    return document.getElementById('qr-canvas');
+  }
+
+  function getFileName() {
+    const room = document.getElementById('room').value || 'room';
+    const sum = document.getElementById('sum').value || 'sum';
+    return 'qr-' + room + '-' + sum + '.png';
+  }
+
+  function saveQRImage() {
+    clearError();
+    clearStatus();
+
+    if (!lastQrGenerated) {
+      showError('Сначала сформируйте QR-код');
+      return;
+    }
+
+    try {
+      const canvas = getCanvas();
+      const link = document.createElement('a');
+      link.href = canvas.toDataURL('image/png');
+      link.download = getFileName();
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showStatus('QR-код сохранен как изображение.');
+    } catch (e) {
+      showError('Не удалось сохранить изображение.');
+    }
+  }
+
+  function canvasToBlob(canvas) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('Не удалось создать PNG'));
+      }, 'image/png');
+    });
+  }
+
+  async function shareQRImage() {
+    clearError();
+    clearStatus();
+
+    if (!lastQrGenerated) {
+      showError('Сначала сформируйте QR-код');
+      return;
+    }
+
+    try {
+      const canvas = getCanvas();
+      const blob = await canvasToBlob(canvas);
+      const file = new File([blob], getFileName(), { type: 'image/png' });
+
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: 'QR-код оплаты',
+          text: 'QR-код для оплаты проживания',
+          files: [file]
+        });
+        showStatus('Открыт выбор приложения для отправки.');
+        return;
+      }
+
+      if (navigator.share) {
+        await navigator.share({
+          title: 'QR-код оплаты',
+          text: 'QR-код для оплаты проживания'
+        });
+        showStatus('Открыто меню отправки.');
+        return;
+      }
+
+      showError('В этом браузере функция "Поделиться" не поддерживается.');
+    } catch (e) {
+      if (e && e.name === 'AbortError') {
+        showError('Отправка отменена.');
+      } else {
+        showError('Не удалось открыть меню отправки.');
+      }
+    }
+  }
+
+  function updateShareButtonState() {
+    const btn = document.getElementById('shareBtn');
+    if (!btn) return;
+    btn.disabled = !navigator.share;
+    btn.style.opacity = navigator.share ? '1' : '0.6';
+  }
+
+  updateShareButtonState();
 </script>
 </body>
 </html>
